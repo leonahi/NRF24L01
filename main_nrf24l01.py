@@ -107,7 +107,43 @@ class RadioNRF24:
         status_reg = self.nrf24_read_reg(nrf24.STATUS, 0)
             
     
-    def nrf24_send_data(self):
+    def nrf24_send_data(self, tx_payload):
+        # reset status register
+        byte_list = [nrf24.STATUS | nrf24.W_REGISTER]
+        byte_list.append(( (1 << nrf24.MAX_RT) | (1 << nrf24.TX_DS) | (1 << nrf24.RX_DR) ))  # reset status 
+        self.__nrf24_do_spi_operation(byte_list)
+        
+        # flush TX FIFO
+        self.__nrf24_do_spi_operation([nrf24.FLUSH_TX])
+        
+        # debug - print status before transmission
+        print(self.nrf24_read_reg(nrf24.STATUS, 0))
+        
+        # debug - print receiver address
+        print(self.nrf24_read_reg(nrf24.RX_ADDR_P0, 1))
+        
+        # write to send into TX buffer
+        byte_list = [W_TX_PAYLOAD]
+        byte_list.extend(tx_payload)
+        self.__nrf24_do_spi_operation(byte_list)
+        
+        try:
+            GPIO.setmode(GPIO.BCM)
+            GPIO.setup(self.nrf24_ce_pin, GPIO.OUT)
+            GPIO.output(self.nrf24_ce_pin, True)
+            time.sleep(self.nrf24_long_pause)
+            GPIO.output(self.nrf24_ce_pin, False)
+            GPIO.cleanup()
+        except(KeyboardInterrupt, SystemExit):
+            try:
+                GPIO.cleanup()
+                print("GPIO CE pin closed!!")
+            except:
+                pass
+            raise
+        
+        
+        
         pass
     
     def __del__(self):
