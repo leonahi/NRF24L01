@@ -8,7 +8,7 @@ import RPi.GPIO as GPIO
 class RadioNRF24:
     def __init__(self, GPIO_CE_PIN):
         self.nrf24_spi = spidev.SpiDev() 
-        self.nrf24_spi.open(0,0)
+        self.nrf24_spi.open(0,1)
         self.nrf24_ce_pin = GPIO_CE_PIN
         self.nrf24_small_pause = 0.05
         self.nrf24_long_pause = 0.5
@@ -29,9 +29,9 @@ class RadioNRF24:
     
     def nrf24_setup_radio(self):
         # Setup EN_AA - Enable Auto Ack
-        byte_list = [nrf24.EN_AA | nrf24.W_REGISTER]
-        byte_list.append((1 << nrf24.ENAA_P0))
-        self.__nrf24_do_spi_operation(byte_list)
+        #byte_list = [nrf24.EN_AA | nrf24.W_REGISTER]
+        #byte_list.append((1 << nrf24.ENAA_P0))
+        #self.__nrf24_do_spi_operation(byte_list)
              
         byte_list = [nrf24.SETUP_RETR | nrf24.W_REGISTER]
         byte_list.append(self.nrf24_SETUP_RETR_SET_ACK_RETR)
@@ -90,11 +90,12 @@ class RadioNRF24:
         self.__nrf24_do_spi_operation(byte_list)
         
         try:
-            GPIO.setmode(GPIO.BCM)
+            GPIO.setmode(GPIO.BOARD)
             GPIO.setup(self.nrf24_ce_pin, GPIO.OUT)
             GPIO.output(self.nrf24_ce_pin, True)
             time.sleep(self.nrf24_long_pause)
             GPIO.output(self.nrf24_ce_pin, False)
+            time.sleep(self.nrf24_small_pause)
             GPIO.cleanup()
         except(KeyboardInterrupt, SystemExit):
             try:
@@ -107,7 +108,7 @@ class RadioNRF24:
         status_reg = self.nrf24_read_reg(nrf24.STATUS, 0)
             
     
-    def nrf24_send_data(self, tx_payload):
+    def nrf24_send_data(self, tx_payload=None):
         # reset status register
         byte_list = [nrf24.STATUS | nrf24.W_REGISTER]
         byte_list.append(( (1 << nrf24.MAX_RT) | (1 << nrf24.TX_DS) | (1 << nrf24.RX_DR) ))  # reset status 
@@ -120,19 +121,24 @@ class RadioNRF24:
         print(self.nrf24_read_reg(nrf24.STATUS, 0))
         
         # debug - print receiver address
-        print(self.nrf24_read_reg(nrf24.RX_ADDR_P0, 1))
+        print(self.nrf24_read_reg(nrf24.RX_ADDR_P0, 5))
         
         # write to send into TX buffer
-        byte_list = [W_TX_PAYLOAD]
+        tx_payload = [48, 48, 48]
+        byte_list = [nrf24.W_TX_PAYLOAD]
         byte_list.extend(tx_payload)
         self.__nrf24_do_spi_operation(byte_list)
         
+        print(self.nrf24_read_reg(nrf24.FIFO_STATUS, 1))
+        
         try:
-            GPIO.setmode(GPIO.BCM)
+            GPIO.setmode(GPIO.BOARD)
             GPIO.setup(self.nrf24_ce_pin, GPIO.OUT)
             GPIO.output(self.nrf24_ce_pin, True)
-            time.sleep(self.nrf24_long_pause)
+            #time.sleep(self.nrf24_long_pause)
+            time.sleep(.05)
             GPIO.output(self.nrf24_ce_pin, False)
+            time.sleep(self.nrf24_small_pause)
             GPIO.cleanup()
         except(KeyboardInterrupt, SystemExit):
             try:
@@ -142,16 +148,17 @@ class RadioNRF24:
                 pass
             raise
         
+        # debug - print status before transmission
+        print(self.nrf24_read_reg(nrf24.STATUS, 0))
         
         
-        pass
     
     def __del__(self):
         self.nrf24_spi.close()
 
 def main():
     
-    nrf_radio = RadioNRF24(18)
+    nrf_radio = RadioNRF24(16)
     nrf_radio.nrf24_setup_radio()
     print(nrf_radio.nrf24_read_reg(nrf24.EN_AA, 1))
     print(nrf_radio.nrf24_read_reg(nrf24.SETUP_RETR, 1))
@@ -165,6 +172,24 @@ def main():
     print(nrf_radio.nrf24_read_reg(nrf24.CONFIG, 1))
     print("{0:b}".format(nrf_radio.nrf24_read_reg(nrf24.STATUS, 0)[0]))
     print(hex(nrf_radio.nrf24_read_reg(nrf24.STATUS, 0)[0]))
+    
+    print("Sending data....")
+    nrf_radio.nrf24_send_data();
+    
+    print(nrf_radio.nrf24_read_reg(nrf24.FIFO_STATUS, 1))
+    
+    """
+    GPIO.setmode(GPIO.BOARD)
+    GPIO.setup(16, GPIO.OUT)
+    GPIO.output(16, 1)
+    time.sleep(10)
+    GPIO.output(16, 0)
+    time.sleep(5)
+    GPIO.output(16, 1)
+    time.sleep(5)
+    GPIO.cleanup()
+    time.sleep(5)
+    """
     
     del nrf_radio
 
