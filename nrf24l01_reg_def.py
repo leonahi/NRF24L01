@@ -2,6 +2,8 @@ ADDRESS = 0x12
 
 CONFIG      =  0x00
 EN_AA       =  0x01
+
+# Enable rx address - EN data rx data pipe
 EN_RXADDR   =  0x02
 SETUP_AW    =  0x03
 SETUP_RETR  =  0x04
@@ -26,8 +28,12 @@ RX_PW_P3    =  0x14
 RX_PW_P4    =  0x15
 RX_PW_P5    =  0x16
 
+# FIFO status
 FIFO_STATUS =  0x17
+
+# Enable dynamic payload length
 DYNPD	    =  0x1C
+
 FEATURE	    =  0x1D
 
 # Bit Mnemonics
@@ -38,6 +44,8 @@ EN_CRC      = 3
 CRCO        = 2
 PWR_UP      = 1
 PRIM_RX     = 0
+
+# Enable auto ack on pipe - Px
 ENAA_P5     = 5
 ENAA_P4     = 4
 ENAA_P3     = 3
@@ -57,7 +65,7 @@ AW          = 0
 ARD         = 4
 ARC         = 0
 
-# RF_SETUP
+# RF_SETUP BITP
 RF_SETUP_CONT_WAVE   = 7
 RF_SETUP_RF_DR_LOW   = 5
 RF_SETUP_PLL_LOCK    = 4
@@ -76,38 +84,36 @@ FIFO_FULL   = 5
 TX_EMPTY    = 4
 RX_FULL     = 1
 RX_EMPTY    = 0
+
+# Dynamic payload enable BITP
 DPL_P5	    = 5
 DPL_P4	    = 4
 DPL_P3	    = 3 
 DPL_P2	    = 2
 DPL_P1	    = 1
 DPL_P0	    = 0
+
 EN_DPL	    = 2
 EN_ACK_PAY  = 1
 EN_DYN_ACK  = 0
 
 # Instruction Mnemonics 
-R_REGISTER    =  0x00
-W_REGISTER    =  0x20
-REGISTER_MASK =  0x1F
-ACTIVATE      =  0x50
-R_RX_PL_WID   =  0x60
-R_RX_PAYLOAD  =  0x61
-W_TX_PAYLOAD  =  0xA0
-W_ACK_PAYLOAD =  0xA8
-FLUSH_TX      =  0xE1
-FLUSH_RX      =  0xE2
-REUSE_TX_PL   =  0xE3
-NOP           =  0xFF
+R_REGISTER           =  0x00
+W_REGISTER           =  0x20
+REGISTER_MASK        =  0x1F
+ACTIVATE             =  0x50
+R_RX_PL_WID          =  0x60
+R_RX_PAYLOAD         =  0x61
+W_TX_PAYLOAD         =  0xA0
+W_ACK_PAYLOAD        =  0xA8
+W_TX_PAYLOAD_NO_ACK  =  0xB0
+FLUSH_TX             =  0xE1
+FLUSH_RX             =  0xE2
+REUSE_TX_PL          =  0xE3
+NOP                  =  0xFF
 
 # Non-P omissions
 LNA_HCURR = 0
 
 # P model memory Map
 RPD = 0x09
-
-# P model bit Mnemonics
-RF_DR_LOW   = 5
-RF_DR_HIGH  = 3
-RF_PWR_LOW  = 1
-RF_PWR_HIGH = 2

@@ -6,16 +6,16 @@ import nrf24l01_reg_def as nrf24
 import RPi.GPIO as GPIO
 
 class RadioNRF24:
-    def __init__(self, mode='SENDER', payload_size=32, rx_pipe=0, data_rate='1MBPS', GPIO_CE_PIN=16):
+    def __init__(self, mode='SENDER', payload_size=3, rx_pipe=0, data_rate='1MBPS', gpio_ce_pin=16):
         self.nrf24_spi = spidev.SpiDev() 
         self.nrf24_spi.open(0,0)
-        self.nrf24_ce_pin = GPIO_CE_PIN
+        self.nrf24_CE_PIN = gpio_ce_pin
         self.nrf24_small_pause = 0.05
         self.nrf24_long_pause = 0.5
         
         # decide rx pipe for payload
         self.nrf24_REG_RX_PW_Px = (nrf24.RX_PW_P0 + rx_pipe)  # rx_pipe decides which rx pipe number
-        self.nrf24_SET_RX_PW_Px_PAYLOAD = payload_size
+        self.nrf24_SET_RX_PW_Px_PAYLOAD_SIZE = payload_size
         
         # enable rx pipe 
         self.nrf24_SET_EN_RXADDR_ERX_Px = (1 << rx_pipe)
@@ -35,9 +35,9 @@ class RadioNRF24:
             self.nrf24_SETUP_RF_SETUP = ( (0x03 << nrf24.RF_SETUP_RF_PWR) | (0x01 << nrf24.RF_SETUP_RF_DR_LOW) )  # 250kbps data rate 
         
         if mode == 'RECEIVER':
-            self.nrf24_SETUP_CONFIG = 0x1E  # Sender
+            self.nrf24_SETUP_CONFIG = 0x1F  # Sender
         elif mode == 'SENDER':
-            self.nrf24_SETUP_CONFIG = 0x1F  # Receiver
+            self.nrf24_SETUP_CONFIG = 0x1E  # Receiver
         
         self.nrf24_RESET_STATUS = 0x70
     
@@ -84,9 +84,9 @@ class RadioNRF24:
         byte_list.extend(self.nrf24_SETUP_TX_ADDR_SET_ADDRESS)  # set rx pipe 0 address to 0x1212121212 
         self.__nrf24_do_spi_operation(byte_list)
     
-        # Setup RX payload for pipe 0
+        # Setup RX payload for pipe
         byte_list = [self.nrf24_REG_RX_PW_Px | nrf24.W_REGISTER]
-        byte_list.append(self.nrf24_SET_RX_PW_Px_PAYLOAD)  # payload_size bytes payload RX pipe = rx_pipe
+        byte_list.append(self.nrf24_SET_RX_PW_Px_PAYLOAD_SIZE)  # payload_size bytes payload RX pipe = rx_pipe
         self.__nrf24_do_spi_operation(byte_list)
         
         # Setup CONFIG register
@@ -99,22 +99,57 @@ class RadioNRF24:
         byte_list = [REGISTER | nrf24.R_REGISTER]
         for i in range(num_bytes):
             byte_list.append(nrf24.NOP)
-        return self.__nrf24_do_spi_operation(byte_list)          
+        return self.__nrf24_do_spi_operation(byte_list)       
     
-    def nrf24_receive_data(self):
-        # reset status register
-        byte_list = [nrf24.STATUS | nrf24.W_REGISTER]
-        #byte_list.append(( (1 << nrf24.MAX_RT) | (1 << nrf24.TX_DS) | (1 << nrf24.RX_DR) ))  # reset status 
-        byte_list.append(self.nrf24_RESET_STATUS)
+    def nrf24_change_address(self, tx_rx_address):
+        byte_list = [nrf24.RX_ADDR_P0 | nrf24.W_REGISTER]
+        byte_list.extend(tx_rx_address)  # set rx pipe 0 address 
         self.__nrf24_do_spi_operation(byte_list)
         
+        byte_list = [nrf24.TX_ADDR | nrf24.W_REGISTER]
+        byte_list.extend(tx_rx_address)  # set tx address
+        self.__nrf24_do_spi_operation(byte_list)
+        
+    def nrf24_change_radio_mode(self, md):
+        byte_list = [nrf24.CONFIG | nrf24.W_REGISTER]
+        if md is 'tx':
+            byte_list.append(0x0E)
+        elif md is 'rx':
+            byte_list.append(0x0F)
+        self.__nrf24_do_spi_operation(byte_list)
+    
+    def nrf24_en_auto_ack(self, pipe_number):
+        byte_list = [nrf24.EN_AA | nrf24.W_REGISTER]
+        byte_list.append((1 << pipe_number))
+        self.__nrf24_do_spi_operation(byte_list)
+    
+    def nrf24_flush_tx_fifo(self):
+        self.__nrf24_do_spi_operation([nrf24.FLUSH_TX])
+    
+    def nrf24_flush_rx_fifo(self):
+        self.__nrf24_do_spi_operation([nrf24.FLUSH_RX])
+        
+    def nrf24_write_tx_fifo(self, tx_payload):
+        byte_list = [nrf24.W_TX_PAYLOAD]
+        byte_list.extend(tx_payload)
+        self.__nrf24_do_spi_operation(byte_list)
+    
+    def nrf24_read_rx_fifo(self, payload_length):
+        return self.nrf24_read_reg(nrf24.R_RX_PAYLOAD, payload_length)
+    
+    def nrf24_reset_status(self):
+        byte_list = [nrf24.STATUS | nrf24.W_REGISTER]
+        byte_list.append(self.nrf24_RESET_STATUS)
+        self.__nrf24_do_spi_operation(byte_list)        
+    
+    def nrf24_enter_transceiver_mode(self):
         try:
             GPIO.setmode(GPIO.BOARD)
-            GPIO.setup(self.nrf24_ce_pin, GPIO.OUT)
-            GPIO.output(self.nrf24_ce_pin, True)
+            GPIO.setup(self.nrf24_CE_PIN, GPIO.OUT)
+            GPIO.output(self.nrf24_CE_PIN, True)
             #time.sleep(self.nrf24_long_pause)
             time.sleep(.05)
-            GPIO.output(self.nrf24_ce_pin, False)
+            GPIO.output(self.nrf24_CE_PIN, False)
             time.sleep(self.nrf24_small_pause)
             GPIO.cleanup()
         except(KeyboardInterrupt, SystemExit):
@@ -124,57 +159,48 @@ class RadioNRF24:
             except:
                 pass
             raise
+
+    def nrf24_receive_data(self):
+        self.nrf24_reset_status()
+        self.nrf24_flush_rx_fifo()
         
-        status_reg = self.nrf24_read_reg(nrf24.STATUS, 0)
-        print(status_reg)
+        print("STATUS : {0}".format(self.nrf24_read_reg(nrf24.STATUS, 0)))
+        print("FIFO Status : {0}\n".format(self.nrf24_read_reg(nrf24.FIFO_STATUS, 1)))
         
-        print("\nrx payload...")
-        print(nrf24_read_reg(nrf24.R_RX_PAYLOAD, 3))
+        self.nrf24_enter_transceiver_mode()
+        
+        while 1:
+            status = self.nrf24_read_reg(nrf24.STATUS, 0)[0]
+            if status & 0x40 == 0x40:
+                break
+            time.sleep(.2)
+        
+        print("STATUS : {0}".format(self.nrf24_read_reg(nrf24.STATUS, 0)))
+        print("Payload : {0}\n".format(self.nrf24_read_rx_fifo(3)))
+        print("FIFO Status : {0}\n".format(self.nrf24_read_reg(nrf24.FIFO_STATUS, 1)))
             
-    
     def nrf24_send_data(self, tx_payload=None):
-        # reset status register
-        byte_list = [nrf24.STATUS | nrf24.W_REGISTER]
-        #byte_list.append(( (1 << nrf24.MAX_RT) | (1 << nrf24.TX_DS) | (1 << nrf24.RX_DR) ))  # reset status 
-        byte_list.append(self.nrf24_RESET_STATUS)
-        self.__nrf24_do_spi_operation(byte_list)
+        self.nrf24_reset_status()
         
         # flush TX FIFO
-        self.__nrf24_do_spi_operation([nrf24.FLUSH_TX])
+        self.nrf24_flush_tx_fifo()
         
         # debug - print status before transmission
-        print(self.nrf24_read_reg(nrf24.STATUS, 0))
+        print("STATUS : {0}".format(self.nrf24_read_reg(nrf24.STATUS, 0)))
+        print("FIFO status : {0}\n".format(self.nrf24_read_reg(nrf24.FIFO_STATUS, 1)))
         
         # debug - print receiver address
         print(self.nrf24_read_reg(nrf24.RX_ADDR_P0, 5))
         
         # write to send into TX buffer
-        tx_payload = [48, 48, 48]
-        byte_list = [nrf24.W_TX_PAYLOAD]
-        byte_list.extend(tx_payload)
-        self.__nrf24_do_spi_operation(byte_list)
+        self.nrf24_write_tx_fifo([21, 29, 6])
         
-        print(self.nrf24_read_reg(nrf24.FIFO_STATUS, 1))
+        print("FIFO status : {0}\n".format(self.nrf24_read_reg(nrf24.FIFO_STATUS, 1)))
         
-        try:
-            GPIO.setmode(GPIO.BOARD)
-            GPIO.setup(self.nrf24_ce_pin, GPIO.OUT)
-            GPIO.output(self.nrf24_ce_pin, True)
-            #time.sleep(self.nrf24_long_pause)
-            time.sleep(.05)
-            GPIO.output(self.nrf24_ce_pin, False)
-            time.sleep(self.nrf24_small_pause)
-            GPIO.cleanup()
-        except(KeyboardInterrupt, SystemExit):
-            try:
-                GPIO.cleanup()
-                print("GPIO CE pin closed!!")
-            except:
-                pass
-            raise
+        self.nrf24_enter_transceiver_mode()
         
         # debug - print status before transmission
-        print(self.nrf24_read_reg(nrf24.STATUS, 0))      
+        print("STATUS : {0}".format(self.nrf24_read_reg(nrf24.STATUS, 0)))      
     
     def __del__(self):
         self.nrf24_spi.close()
@@ -184,34 +210,34 @@ def main():
     nrf_radio = RadioNRF24(mode='RECEIVER')
     nrf_radio.nrf24_setup_radio()
     
-    print("Ack enable for rx pipe...")
+    print("\nAck enable for rx pipe...")
     print( hex(nrf_radio.nrf24_read_reg(nrf24.EN_AA, 1)[1]) )   
     
-    print('Number of retry and retry interval...')
+    print('\nNumber of retry and retry interval...')
     print( hex(nrf_radio.nrf24_read_reg(nrf24.SETUP_RETR, 1)[1]) )  
     
-    print('RX pipe number...')
+    print('\nRX pipe number...')
     print( hex(nrf_radio.nrf24_read_reg(nrf24.EN_RXADDR, 1)[1]) )   
     
-    print('Address width...')
+    print('\nAddress width...')
     print( hex(nrf_radio.nrf24_read_reg(nrf24.SETUP_AW, 1)[1]) )   
     
-    print('RF Channel freq...')
+    print('\nRF Channel freq...')
     print( hex(nrf_radio.nrf24_read_reg(nrf24.RF_CH, 1)[1]) )  
     
-    print('RF_SETUP...')
+    print('\nRF_SETUP...')
     print( hex(nrf_radio.nrf24_read_reg(nrf24.RF_SETUP, 1)[1]) )   
     
-    print('RX Address...')
+    print('\nRX Address...')
     print(nrf_radio.nrf24_read_reg(nrf24.RX_ADDR_P0, 5)) 
     
-    print('TX Address...')
+    print('\nTX Address...')
     print(nrf_radio.nrf24_read_reg(nrf24.TX_ADDR, 5))
     
-    print('Payload...')
+    print('\nPayload...')
     print( hex(nrf_radio.nrf24_read_reg(nrf24.RX_PW_P0, 1)[1]) )
     
-    print('CONFIG register')
+    print('\nCONFIG register')
     print( hex(nrf_radio.nrf24_read_reg(nrf24.CONFIG, 1)[1]) )   
     
     #print("{0:b}".format(nrf_radio.nrf24_read_reg(nrf24.STATUS, 0)[0]))
@@ -222,33 +248,21 @@ def main():
     
     #print(nrf_radio.nrf24_read_reg(nrf24.FIFO_STATUS, 1))
     
-    """
-    GPIO.setmode(GPIO.BOARD)
-    GPIO.setup(16, GPIO.OUT)
-    GPIO.output(16, 1)
-    time.sleep(10)
-    GPIO.output(16, 0)
-    time.sleep(5)
-    GPIO.output(16, 1)
-    time.sleep(5)
-    GPIO.cleanup()
-    time.sleep(5)
-    """
-    """
-    mode  = "receiver"
     
-    if mode == "receiver":
+    mode = "sender"
+    
+    if mode is "receiver":
         print("Receiving Data....\n\n")
+        nrf_radio.nrf24_change_radio_mode('rx')
         while(1):
             nrf_radio.nrf24_receive_data()
             time.sleep(nrf_radio.nrf24_long_pause)
     else:
         print("Sendind Data....\n\n")
-        while(1):
-            nrf_radio.nrf24_send_data()
-            time.sleep(nrf_radio.nrf24_long_pause)
-    """       
-    
+        nrf_radio.nrf24_change_radio_mode('tx')
+        nrf_radio.nrf24_send_data()
+        time.sleep(nrf_radio.nrf24_long_pause)
+        
     del nrf_radio
 
 if __name__ == "__main__":
